@@ -22,7 +22,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Small, uncomplicated **all-Clojure** library.
  * **Good performance**.
  * **Modern targets**: Redis 2.0+ (with full [2.6](http://antirez.com/post/redis-2.6-is-near.html) support), Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading) support (not mandatory).
- * Industrial strength **connection pooling**.
+ * Industrial strength **connection pooling** and [Sentinel](http://redis.io/topics/sentinel) support.
  * Complete and accurate command definitions with **full documentation**.
  * Composable, **first-class command functions**.
  * Flexible, high-performance **binary-safe serialization**.
@@ -303,6 +303,21 @@ Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See t
 ```
 
 Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.locks` namespace for details.
+
+### Redis Sentinel
+
+For **automatic failover**, first configure Redis Sentinel as per [the docs](http://redis.io/topics/sentinel).
+
+On Carmine's end, there's only two changes you need to make:
+
+1. Use `car/add-sentinel-server!` to let Carmine know where your Sentinel servers are.
+2. Add the appropriate keys to your `car/make-conn-spec` call (see docstring for details).
+
+When executing commands, Carmine will now first resolve the destination Redis server address through the configured Sentinel server(s).
+
+### Redis Cluster
+
+TODO: Waiting for a finalized client spec
 
 ## Performance
 

@@ -41,9 +41,21 @@
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
 
 (defn make-conn-spec
-  [& {:keys [uri host port password timeout db] :as opts}]
-  (let [defaults {:host "127.0.0.1" :port 6379 :timeout 0 :db 0}]
-    (merge defaults opts (parse-uri uri))))
+  "(make-conn-spec :host \"127.0.0.1\" :port 6379) ; Simple static host
+
+  ;;; Use Redis Sentinel to determine host dynamically (for auto-failover, etc.)
+  (add-sentinel-server! \"my-app\" \"127.0.0.1\")
+  (make-conn-spec :sentinel-group  \"my-app\" ; Sentinel group name
+                  :sentinel-master \"master\" ; Configured Redis master name
+   )"
+  [& {:keys [uri host port password timeout db
+             sentinel-group sentinel-master sentinel-timeout] :as opts}]
+  (let [defaults {:host "127.0.0.1" :port 6379 :timeout 0 :db 0
+                  :sentinel-timeout 100}]
+    (-> (merge defaults opts (parse-uri uri))
+        (#(if sentinel-group (assoc % :host nil :port nil) %)))))
+
+(comment (make-conn-spec))
 
 (defmacro with-conn
   "Evaluates body in the context of a thread-bound pooled connection to a Redis
@@ -61,6 +73,36 @@
        (let [response# (protocol/with-context conn# ~@body)]
          (conns/release-conn pool# conn#) response#)
        (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
+
+;;;; Sentinel
+
+(defn- remove-sentinel-server [group-name ip & [groups]]
+  (vec (remove (fn [[ip* port]] (= ip ip*))
+               ((or @conns/sentinel-groups groups) group-name))))
+
+(defn add-sentinel-server!
+  "(add-sentinel-server! \"my-app\" \"127.0.0.1\" 26379)"
+  [group-name ip & [port to-front?]]
+  (swap! conns/sentinel-groups
+         (fn [groups]
+           (assoc groups group-name
+                  (let [groups (remove-sentinel-server group-name ip groups)
+                        server [ip (or port 26379)]]
+                    (if to-front?
+                      (vec (cons server groups))
+                      (conj groups server)))))))
+
+(defn remove-sentinel-server!
+  "(remove-sentinel-server! \"my-app\" \"127.0.0.1\")"
+  [group-name ip]
+  (swap! conns/sentinel-groups
+         (fn [groups]
+           (assoc groups group-name
+                  (remove-sentinel-server group-name ip groups)))))
+
+(comment (add-sentinel-server!    "my-app" "127.0.0.1" 26379 true)
+         (add-sentinel-server!    "my-app" "127.0.0.2")
+         (remove-sentinel-server! "my-app" "127.0.0.1"))
 
 ;;;; Misc
 
