@@ -99,3 +99,30 @@
   ([f c1 c2]            (into [] (map f c1 c2)))
   ([f c1 c2 c3]         (into [] (map f c1 c2 c3)))
   ([f c1 c2 c3 & colls] (into [] (apply map f c1 c2 c3 colls))))
+
+(defn rate-limited
+  "Wraps fn so that it returns {:result _ :limited? _ :ms-till-next-window _}."
+  [limit window-ms f]
+  (let [data (atom {:window-start 0 :calls 0})]
+    (fn [& args]
+      (let [{:keys [window-start calls]} @data
+            now      (System/currentTimeMillis)
+            elapsed  (- now window-start)
+            restart? (> elapsed window-ms)
+            return   (fn [limited?]
+                       {:result   (if limited? nil (apply f args))
+                        :limited? limited?
+                        :ms-till-next-window
+                        (if restart? window-ms (- window-ms elapsed))})]
+
+        (if restart?
+          (do (swap! data #(assoc % :window-start now :calls 1))
+              (return false))
+
+          (if (= calls limit)
+            (return true)
+            (do (swap! data #(assoc % :calls (inc calls)))
+                (return false))))))))
+
+(comment (def compute (rate-limited 3 5000 (fn [] "Compute!")))
+         (compute))
